@@ -1,3 +1,10 @@
+## Repo contents
+
+- `README.md` (this file) — full 10-section research deliverable.
+- `swiftlint-rule/DeferBeforeUnstructuredTaskRule.swift` — paste-ready SwiftLint rule sketch.
+- `swiftlint-rule/rule-request-issue.md` — paste-ready body for a realm/SwiftLint rule-request issue.
+- `swift-forums/pitch.md` — draft Swift Forums pitch post that links back to this repo.
+
 # Context
 
 The user asked whether the Swift compiler should warn on a recurring bug shape:
