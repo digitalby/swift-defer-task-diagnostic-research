@@ -22,9 +22,9 @@ func login() {
 
 The author's intent is "flip `isLoading` back to `false` when the async work finishes." The actual behavior is that `isLoading` flips to `false` the moment `login()` returns, since `Task { ... }` schedules and returns immediately. The Task body still runs, but anything observing `isLoading` (a SwiftUI binding, a downstream component) sees the flag inverted from intent.
 
-This is documented and intended language behavior. From Konrad Malawski on the forums (https://forums.swift.org/t/async-support-in-defer-blocks/69455): "I don't recommend wrapping in `Task{}` as that dramatically changes semantics and guarantees, the cleanup will not be guaranteed to complete before the function returns." Folklore-known. Not flagged anywhere.
+This is documented and intended language behavior.
 
-The compiler does not warn. SwiftLint does not warn. The pattern survives in tutorials, blog posts, and production codebases.
+The compiler does not warn. The pattern survives in tutorials, blog posts, and production codebases.
 
 ## Why now
 
