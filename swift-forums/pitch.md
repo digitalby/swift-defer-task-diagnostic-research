@@ -22,7 +22,7 @@ func login() {
 
 The author's intent is "flip `isLoading` back to `false` when the async work finishes." The actual behavior is that `isLoading` flips to `false` the moment `login()` returns, since `Task { ... }` schedules and returns immediately. The Task body still runs, but anything observing `isLoading` (a SwiftUI binding, a downstream component) sees the flag inverted from intent.
 
-This is documented and intended language behavior. From Konrad Malawski on the forums (https://forums.swift.org/t/async-support-in-defer-blocks/69455): "I don't recommend wrapping in `Task{}` as that dramatically changes semantics and guarantees — the cleanup will not be guaranteed to complete before the function returns." Folklore-known. Not flagged anywhere.
+This is documented and intended language behavior. From Konrad Malawski on the forums (https://forums.swift.org/t/async-support-in-defer-blocks/69455): "I don't recommend wrapping in `Task{}` as that dramatically changes semantics and guarantees, the cleanup will not be guaranteed to complete before the function returns." Folklore-known. Not flagged anywhere.
 
 The compiler does not warn. SwiftLint does not warn. The pattern survives in tutorials, blog posts, and production codebases.
 
@@ -60,10 +60,10 @@ Two textual fix-it suggestions: (a) move the defer inside the Task closure; (b) 
 
 The shared-state filter (step 4) is the load-bearing piece. Without it the warning would be too noisy.
 
-- `defer { print("done") }` then `Task { await work() }` — does not trigger (no assignment).
-- `lock.lock(); defer { lock.unlock() }` then `Task { await work() }` — does not trigger (lock release is a method call, not an assignment, and the Task body doesn't typically reference the lock).
-- `let t = Task { await work() }; defer { print("leaving") }; _ = t` — does not trigger (Task is captured).
-- `func f() async { isLoading = true; defer { isLoading = false }; await work() }` — does not trigger (function is async).
+- `defer { print("done") }` then `Task { await work() }`, does not trigger (no assignment).
+- `lock.lock(); defer { lock.unlock() }` then `Task { await work() }`, does not trigger (lock release is a method call, not an assignment, and the Task body doesn't typically reference the lock).
+- `let t = Task { await work() }; defer { print("leaving") }; _ = t`, does not trigger (Task is captured).
+- `func f() async { isLoading = true; defer { isLoading = false }; await work() }`, does not trigger (function is async).
 
 The remaining false-positive class is intentional "kick off work and immediately reset a flag." Rare in practice. Suppressible by `_ = Task { ... }` or by moving the defer outside the function.
 
@@ -96,7 +96,7 @@ struct DeferBeforeUnstructuredTaskRule: Rule {
 
 Reference template inside SwiftLint: `Source/SwiftLintBuiltInRules/Rules/Lint/UnhandledThrowingTaskRule.swift`. The Task-init recognizer pattern there transfers directly.
 
-Repository (research summary, repro matrix, false-positive analysis, full SwiftLint rule source, test cases): `https://github.com/digitalby/swift-defer-task-diagnostic-research` — currently private, will make public if there's interest from this thread.
+Repository (research summary, repro matrix, false-positive analysis, full SwiftLint rule source, test cases): https://github.com/digitalby/swift-defer-task-diagnostic-research
 
 ## Open questions for the community
 

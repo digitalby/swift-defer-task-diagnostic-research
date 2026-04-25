@@ -1,9 +1,9 @@
 ## Repo contents
 
-- `README.md` (this file) — full 10-section research deliverable.
-- `swiftlint-rule/DeferBeforeUnstructuredTaskRule.swift` — paste-ready SwiftLint rule sketch.
-- `swiftlint-rule/rule-request-issue.md` — paste-ready body for a realm/SwiftLint rule-request issue.
-- `swift-forums/pitch.md` — draft Swift Forums pitch post that links back to this repo.
+- `README.md` (this file), full 10-section research deliverable.
+- `swiftlint-rule/DeferBeforeUnstructuredTaskRule.swift`, paste-ready SwiftLint rule sketch.
+- `swiftlint-rule/rule-request-issue.md`, paste-ready body for a realm/SwiftLint rule-request issue.
+- `swift-forums/pitch.md`, draft Swift Forums pitch post that links back to this repo.
 
 # Context
 
@@ -23,7 +23,7 @@ func login() {
 
 # 1. Research Summary
 
-**Confirmed semantics.** `defer` runs when the lexical scope it sits in exits. `Task { ... }` constructs an unstructured task and returns immediately — the closure body runs asynchronously, decoupled from the enclosing function's lifetime. This is documented and intended. Konrad Malawski (Swift core team) on the Swift Forums: "I don't recommend wrapping in `Task{}` as that dramatically changes semantics and guarantees — the cleanup will not be guaranteed to complete before the function returns" (https://forums.swift.org/t/async-support-in-defer-blocks/69455).
+**Confirmed semantics.** `defer` runs when the lexical scope it sits in exits. `Task { ... }` constructs an unstructured task and returns immediately, the closure body runs asynchronously, decoupled from the enclosing function's lifetime. This is documented and intended. Konrad Malawski (Swift core team) on the Swift Forums: "I don't recommend wrapping in `Task{}` as that dramatically changes semantics and guarantees, the cleanup will not be guaranteed to complete before the function returns" (https://forums.swift.org/t/async-support-in-defer-blocks/69455).
 
 **Prior art / discussion of this exact misuse.**
 - **SE-0493 "Support `async` calls in `defer` bodies"** (https://github.com/swiftlang/swift-evolution/blob/main/proposals/0493-defer-async.md). The motivation section names exactly this pattern and the workaround of "spawn a new top-level Task to perform the cleanup." SE-0493 fixes the underlying expressivity gap. **It introduces no new diagnostic for the sync-function antipattern.** Swift authors chose to fix the root cause rather than warn on the workaround.
@@ -42,7 +42,7 @@ func login() {
 | A. `defer { print("done") }` then `Task { await work() }` (sync func) | "done" prints immediately | "done" after work | depends | Pure side effect. Could be either bug or intentional. |
 | B. `lock.lock(); defer { lock.unlock() }` then `Task { await work() }` | Unlock immediately; Task runs unprotected | Hold lock across work | yes-ish | Bug, but locks aren't typically captured into the `Task`. Real lock APIs don't compose with unstructured Tasks. |
 | C. `isLoading = true; defer { isLoading = false }` then `Task { await work() }` | Flag flips false immediately | Flag flips false after work | yes | Canonical bug. defer body and Task body both touch the same mutable state. |
-| D. Same as C but the function is `async` and awaits `work()` directly | Flag flips after work — correct | Same | no | Correct usage. Must not warn. |
+| D. Same as C but the function is `async` and awaits `work()` directly | Flag flips after work, correct | Same | no | Correct usage. Must not warn. |
 | E. `let t = Task { ... }; defer { print("leaving") }; _ = t` | "leaving" on func return; Task continues | Log on scope exit | no | defer is intentionally about scope exit; Task is captured. |
 | F. `defer { cleanup() }` then `Task.detached { await work() }` | cleanup runs immediately | depends | depends | Same shape as A/C; treat identically to unstructured-`Task.init` for diagnostic purposes. |
 
@@ -74,7 +74,7 @@ Single, narrow, high-confidence shape. Attach to the **`defer`** statement (it's
 
 # 4. False Positive Analysis
 
-**Case B (locks).** Filter step 5 only fires on assignments. NSLock-style `lock.unlock()` is a method call, not an assignment, and the lock isn't typically read inside the `Task` closure. Heuristic does **not** fire on lock release — silently correct.
+**Case B (locks).** Filter step 5 only fires on assignments. NSLock-style `lock.unlock()` is a method call, not an assignment, and the lock isn't typically read inside the `Task` closure. Heuristic does **not** fire on lock release, silently correct.
 
 **Other plausible false positives:**
 - Logging defer (case A). No assignment. Filter rejects.
@@ -82,7 +82,7 @@ Single, narrow, high-confidence shape. Attach to the **`defer`** statement (it's
 - `didSet` pings on a flag the Task doesn't read. Filter rejects.
 - Intentional "kick off and forget" with a flag flip on entry/exit only locally observable. **This is wrong.** Mitigation: warning is suppressible by `_ = Task { ... }` or by moving the defer outside the function.
 
-**Honest verdict.** The shared-state filter does kill the obvious false positives, but it imposes flow analysis (collect l-value decls in defer, free decls in Task closure, intersect) on every sync function with a defer, and the *high-confidence* set is narrow — essentially "boolean flag flip plus matching read/write in the Task." Signal-to-implementation ratio is poor for a compiler check. SwiftLint can do exactly this analysis with SwiftSyntax in 50 lines and an opt-in flag.
+**Honest verdict.** The shared-state filter does kill the obvious false positives, but it imposes flow analysis (collect l-value decls in defer, free decls in Task closure, intersect) on every sync function with a defer, and the *high-confidence* set is narrow, essentially "boolean flag flip plus matching read/write in the Task." Signal-to-implementation ratio is poor for a compiler check. SwiftLint can do exactly this analysis with SwiftSyntax in 50 lines and an opt-in flag.
 
 # 5. Playground-Style Fixes
 
@@ -167,7 +167,7 @@ class VM {
   var isLoading = false
   func doSomethingAsync() async {}
 
-  // Case C: positive — should warn.
+  // Case C: positive, should warn.
   func loginC() {
     isLoading = true
     defer { isLoading = false } // expected-warning {{'defer' runs when the enclosing scope exits, before the unstructured 'Task'}}
@@ -177,27 +177,27 @@ class VM {
     }
   }
 
-  // Case A: print only — no shared state, no warning.
+  // Case A: print only, no shared state, no warning.
   func loginA() {
     defer { print("done") }
     Task { await self.doSomethingAsync() }
   }
 
-  // Case D: async function awaiting directly — no warning.
+  // Case D: async function awaiting directly, no warning.
   func loginD() async {
     isLoading = true
     defer { isLoading = false }
     await doSomethingAsync()
   }
 
-  // Case E: Task is captured — no warning.
+  // Case E: Task is captured, no warning.
   func loginE() {
     let t = Task { await self.doSomethingAsync() }
     defer { print("leaving") }
     _ = t
   }
 
-  // Case F: Task.detached — same shape as C, should warn.
+  // Case F: Task.detached, same shape as C, should warn.
   func loginF() {
     isLoading = true
     defer { isLoading = false } // expected-warning {{'defer' runs when the enclosing scope exits, before the unstructured 'Task'}}
@@ -207,7 +207,7 @@ class VM {
     }
   }
 
-  // No-overlap: defer touches a different decl than Task body — no warning.
+  // No-overlap: defer touches a different decl than Task body, no warning.
   func loginNoOverlap() {
     var localFlag = true
     defer { localFlag = false }
@@ -348,7 +348,7 @@ Helpers (`collectAssignedIdentifiers`, `collectReferencedIdentifiers`, `unstruct
 - `lib/Sema/MiscDiagnostics.cpp`
 - `lib/Sema/TypeCheckStmt.cpp`
 - `test/Sema/defer_before_task.swift` (new)
-- SE-0520 implementation commit (locate via `git log --grep "SE-0520"` in a swiftlang/swift checkout) — read first.
+- SE-0520 implementation commit (locate via `git log --grep "SE-0520"` in a swiftlang/swift checkout), read first.
 
 # Verification
 
